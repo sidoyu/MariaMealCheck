@@ -10,6 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException
 
 options = Options()
 options.add_argument("--headless")
@@ -41,6 +42,20 @@ try:
     driver.find_element(By.ID, "imgLogin").click()
     print("Login submitted")
     time.sleep(2)
+
+    # ✅ (추가) 로그인 충돌 방지: 기존 세션이 있다면 강제 로그아웃
+    try:
+        alert = driver.switch_to.alert  # 현재 Alert 창이 있는지 확인
+        alert_text = alert.text
+        print(f"Alert detected: {alert_text}")
+
+        if "Already logged in another place" in alert_text:
+            print("Closing existing session and continuing login...")
+            alert.accept()  # "예" 버튼을 눌러 기존 세션 강제 종료
+            time.sleep(2)  # Alert 닫힌 후 대기
+
+    except NoAlertPresentException:
+        print("No existing login alert detected, proceeding normally.")
 
     # 로그인 성공/실패 단순 확인
     if "ID 와 비밀번호를 정확히 넣어 주십시오." in driver.page_source:
