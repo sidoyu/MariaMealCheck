@@ -2,7 +2,7 @@ name: Run Selenium Script
 
 on:
   schedule:
-    - cron: "30 22 * * 0"  # 매주 월요일 07:30 AM (KST 기준, UTC+9)
+    - cron: "30 21 * * 0"  # 매주 월요일 06:30 AM (KST 기준, UTC+9)
   workflow_dispatch:  # ✅ 수동 실행 기능 추가!
 
 jobs:
