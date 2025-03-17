@@ -17,20 +17,16 @@ options.add_argument("--headless")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 
-# (수정) driver 초기화 - path 제거
 driver = webdriver.Chrome(
     service=Service(ChromeDriverManager().install()),
     options=options
 )
 
-# (추가) DEBUG 문구: 실제 어떤 파일이 실행되는지, 코드가 시작되었는지 확인
 print("DEBUG: RUNNING seleniumcrawling3.py - HEADLESS MODE ENABLED")
 
-# Slack Webhook URL
-WEBHOOK_URL = "https://hooks.slack.com/services/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"
+WEBHOOK_URL = "https://hooks.slack.com/services/XXX/YYY/ZZZ"  # 실제 웹훅 URL로 교체
 
 try:
-    # 로그인 계정 정보 (예시)
     USER_ID = "dyshin"
     USER_PW = "workMR**1201"
 
@@ -43,21 +39,18 @@ try:
     print("Login submitted")
     time.sleep(2)
 
-    # ✅ (추가) 로그인 충돌 방지: 기존 세션이 있다면 강제 로그아웃
+    # (이미 로그인된 세션 강제 종료)
     try:
-        alert = driver.switch_to.alert  # 현재 Alert 창이 있는지 확인
+        alert = driver.switch_to.alert
         alert_text = alert.text
         print(f"Alert detected: {alert_text}")
-
         if "Already logged in another place" in alert_text:
             print("Closing existing session and continuing login...")
-            alert.accept()  # "예" 버튼을 눌러 기존 세션 강제 종료
-            time.sleep(2)  # Alert 닫힌 후 대기
-
+            alert.accept()
+            time.sleep(2)
     except NoAlertPresentException:
         print("No existing login alert detected, proceeding normally.")
 
-    # 로그인 성공/실패 단순 확인
     if "ID 와 비밀번호를 정확히 넣어 주십시오." in driver.page_source:
         print("Login failed.")
         driver.quit()
@@ -75,8 +68,8 @@ try:
     driver.get(post_link)
     time.sleep(2)
 
-    # 3) 본문 내 식단표 테이블만 추출
-    table_elem = driver.find_element(By.CLASS_NAME, "__se_tbl_ext")  # <table class="__se_tbl_ext">
+    # 3) 본문 내 식단표 테이블 추출
+    table_elem = driver.find_element(By.CLASS_NAME, "__se_tbl_ext")
     table_html = table_elem.get_attribute("outerHTML")
 
     # 4) pandas로 파싱
@@ -93,8 +86,7 @@ try:
 
     # 6) 첫 행 -> 날짜
     header_row = df.iloc[0].tolist()
-    # 첫 열 제외
-    dates_raw = header_row[1:]
+    dates_raw = header_row[1:]  # 첫 열 제외
     dates = []
     for val in dates_raw:
         if pd.isna(val):
@@ -102,7 +94,7 @@ try:
         else:
             dates.append(str(val).strip())
 
-    # 메뉴 저장용 dict
+    # 메뉴 dict
     menu_dict = {}
     for d in dates:
         if d:
@@ -123,15 +115,14 @@ try:
                 continue
 
             cell_text = str(cell_val).strip()
-            # 괄호 안 제거
+            # 괄호 제거
             cell_text = re.sub(r"\(.*?\)", "", cell_text)
-            # 줄바꿈 분리
             lines = [ln.strip() for ln in cell_text.split("\n") if ln.strip()]
 
             for ln in lines:
                 menu_dict[date_str].append(ln)
 
-    # 8) **중복 제거** (연속된 동일 항목은 1회만 유지)
+    # 8) 연속된 동일 항목 제거
     for d in menu_dict:
         original_list = menu_dict[d]
         deduplicated_list = []
@@ -140,29 +131,70 @@ try:
                 deduplicated_list.append(m)
         menu_dict[d] = deduplicated_list
 
-    # 9) 최종 메시지 구성
-    # Slack은 *bold* 로 굵게 표시하므로, **을 *로 치환할 예정
-    slack_message = f"**{post_title}**\n"
+    # ------------------- (Block Kit 구성) -------------------
+    # "월요일~금요일"만 식단을 표기한다고 가정.
+    # dates가 "3/17(월)" ~ "3/23(일)" 등 여러 날짜가 있을 텐데,
+    # 여기서는 M-F만 필터링하자.
+    # (실제로는 date_str에서 요일을 추출하는 로직이 필요할 수 있음.)
 
+    # 1) 원하는 날짜만 선택
+    # 예: "월~금"에 해당하는 문자열만 뽑기 (주의: "3/17(월)" 이런 식으로 나올 거라 가정)
+    # 간단히 예시로 "월", "화", "수", "목", "금"이 포함된 날짜만 쓰겠다.
+    weekdays = ["(월)", "(화)", "(수)", "(목)", "(금)"]
+    filtered_dates = []
     for d in dates:
-        if not d:
-            continue
-        slack_message += f"**{d}**\n"
-        menus = menu_dict[d]
-        if not menus:
-            slack_message += "(메뉴 없음)\n\n"
-            continue
-        for m in menus:
-            slack_message += f"{m}\n"
-        slack_message += "\n"
+        # 실제로 d가 "3/17(월)" 이런 식이라고 가정
+        if any(day in d for day in weekdays):
+            filtered_dates.append(d)
 
-    # (중요) 슬랙 문법에 맞게 `**` -> `*` 치환
-    slack_message = slack_message.replace("**", "*")
+    # 2) 각 날짜별로 (날짜필드, 메뉴필드) 페어 만들기
+    fields = []
+    for d in filtered_dates:
+        # 왼쪽 필드: 날짜 (굵게 표시 => *월요일*)
+        left_field = {
+            "type": "mrkdwn",
+            "text": f"*{d}*"
+        }
+        # 오른쪽 필드: 메뉴들 줄바꿈
+        # e.g. "닭곰탕&다대기\n해물콩나물찜\n..."
+        menu_text = "\n".join(menu_dict[d]) if d in menu_dict else "(메뉴 없음)"
+        right_field = {
+            "type": "mrkdwn",
+            "text": menu_text
+        }
 
-    print("\n===== 최종 Slack 메시지 =====\n", slack_message)
+        fields.append(left_field)
+        fields.append(right_field)
 
-    # 10) Slack으로 전송
-    resp = requests.post(WEBHOOK_URL, json={"text": slack_message})
+    # 3) 이 fields를 한 블록에 담기 (최대 10개까지 가능 => 5일치)
+    blocks = [
+        {
+            "type": "section",
+            "fields": fields
+        }
+    ]
+
+    # 추가로 제목(타이틀) 블록을 하나 넣고 싶다면:
+    title_block = {
+        "type": "header",
+        "text": {
+            "type": "plain_text",
+            "text": post_title,
+            "emoji": True
+        }
+    }
+    # 블록 리스트 맨 앞에 제목 블록 추가
+    blocks.insert(0, title_block)
+
+    # 최종 payload
+    payload = {
+        "blocks": blocks
+    }
+
+    print("\n===== 최종 Block Kit 메시지 =====\n", payload)
+
+    # 4) 슬랙 전송
+    resp = requests.post(WEBHOOK_URL, json=payload)
     if resp.status_code == 200:
         print("Menu data sent to Slack successfully.")
     else:
