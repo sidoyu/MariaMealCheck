@@ -30,11 +30,10 @@ print("DEBUG: RUNNING seleniumcrawling3.py - HEADLESS MODE ENABLED")
 WEBHOOK_URL = "https://hooks.slack.com/services/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"
 
 try:
-    # 로그인 계정 정보 (예시)
     USER_ID = "dyshin"
     USER_PW = "workMR**1201"
 
-    # 1) 인트라넷 로그인
+    # ✅ (추가) 로그인 충돌 방지: 기존 세션이 있다면 강제 로그아웃
     driver.get("https://mail.mariababy.com/")
     time.sleep(1)
     driver.find_element(By.ID, "txtUserid").send_keys(USER_ID)
@@ -43,21 +42,18 @@ try:
     print("Login submitted")
     time.sleep(2)
 
-    # ✅ (추가) 로그인 충돌 방지: 기존 세션이 있다면 강제 로그아웃
     try:
         alert = driver.switch_to.alert  # 현재 Alert 창이 있는지 확인
         alert_text = alert.text
         print(f"Alert detected: {alert_text}")
-
         if "Already logged in another place" in alert_text:
             print("Closing existing session and continuing login...")
             alert.accept()  # "예" 버튼을 눌러 기존 세션 강제 종료
             time.sleep(2)  # Alert 닫힌 후 대기
-
     except NoAlertPresentException:
         print("No existing login alert detected, proceeding normally.")
 
-    # 로그인 성공/실패 단순 확인
+    # 로그인 실패 체크
     if "ID 와 비밀번호를 정확히 넣어 주십시오." in driver.page_source:
         print("Login failed.")
         driver.quit()
@@ -91,9 +87,8 @@ try:
         df = df.iloc[:-3, :]
     print("After cutting footer:", df.shape)
 
-    # 6) 첫 행 -> 날짜
+    # 6) 첫 행 -> 날짜 (두 번째 열부터)
     header_row = df.iloc[0].tolist()
-    # 첫 열 제외
     dates_raw = header_row[1:]
     dates = []
     for val in dates_raw:
@@ -102,7 +97,7 @@ try:
         else:
             dates.append(str(val).strip())
 
-    # 메뉴 저장용 dict
+    # 메뉴 dict
     menu_dict = {}
     for d in dates:
         if d:
@@ -122,16 +117,15 @@ try:
             if pd.isna(cell_val):
                 continue
 
+            # 괄호 제거
             cell_text = str(cell_val).strip()
-            # 괄호 안 제거
             cell_text = re.sub(r"\(.*?\)", "", cell_text)
-            # 줄바꿈 분리
             lines = [ln.strip() for ln in cell_text.split("\n") if ln.strip()]
 
             for ln in lines:
                 menu_dict[date_str].append(ln)
 
-    # 8) **중복 제거** (연속된 동일 항목은 1회만 유지)
+    # 8) 중복 제거 (연속된 동일 항목)
     for d in menu_dict:
         original_list = menu_dict[d]
         deduplicated_list = []
@@ -140,29 +134,61 @@ try:
                 deduplicated_list.append(m)
         menu_dict[d] = deduplicated_list
 
-    # 9) 최종 메시지 구성
-    # Slack은 *bold* 로 굵게 표시하므로, **을 *로 치환할 예정
-    slack_message = f"**{post_title}**\n"
+    # ------------------
+    # 9) Block Kit Divider 방식
+    # ------------------
+    # 날짜(월/화/수...) + 메뉴를 section 블록에 담고,
+    # 날짜 사이마다 divider 추가
 
-    for d in dates:
-        if not d:
-            continue
-        slack_message += f"**{d}**\n"
-        menus = menu_dict[d]
-        if not menus:
-            slack_message += "(메뉴 없음)\n\n"
-            continue
-        for m in menus:
-            slack_message += f"{m}\n"
-        slack_message += "\n"
+    # 모든 날짜 사용 (필요시 월~금 필터링 등 가능)
+    filtered_dates = [d for d in dates if d in menu_dict]
 
-    # (중요) 슬랙 문법에 맞게 `**` -> `*` 치환
-    slack_message = slack_message.replace("**", "*")
+    blocks = []
 
-    print("\n===== 최종 Slack 메시지 =====\n", slack_message)
+    # (선택) 제목 블록
+    title_block = {
+        "type": "header",
+        "text": {
+            "type": "plain_text",
+            "text": post_title,  # 예: "3/17~3/23 식단표"
+            "emoji": True
+        }
+    }
+    blocks.append(title_block)
 
-    # 10) Slack으로 전송
-    resp = requests.post(WEBHOOK_URL, json={"text": slack_message})
+    # 날짜별 section + divider
+    for d in filtered_dates:
+        left_field = {
+            "type": "mrkdwn",
+            "text": f"*{d}*"
+        }
+        menu_text = "\n".join(menu_dict[d]) if d in menu_dict else "(메뉴 없음)"
+        right_field = {
+            "type": "mrkdwn",
+            "text": menu_text
+        }
+
+        day_block = {
+            "type": "section",
+            "fields": [left_field, right_field]
+        }
+        blocks.append(day_block)
+
+        # divider 추가
+        blocks.append({"type": "divider"})
+
+    # 마지막 divider 제거(원한다면)
+    if blocks and blocks[-1]["type"] == "divider":
+        blocks.pop()
+
+    payload = {
+        "blocks": blocks
+    }
+
+    print("\n===== 최종 Block Kit 메시지 =====\n", payload)
+
+    # Slack 전송
+    resp = requests.post(WEBHOOK_URL, json=payload)
     if resp.status_code == 200:
         print("Menu data sent to Slack successfully.")
     else:
