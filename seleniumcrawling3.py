@@ -17,21 +17,23 @@ options.add_argument("--headless")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 
+# (수정) driver 초기화 - path 제거
 driver = webdriver.Chrome(
     service=Service(ChromeDriverManager().install()),
     options=options
 )
 
+# (추가) DEBUG 문구: 실제 어떤 파일이 실행되는지, 코드가 시작되었는지 확인
 print("DEBUG: RUNNING seleniumcrawling3.py - HEADLESS MODE ENABLED")
 
-# 실제 슬랙 웹훅 URL로 교체
+# Slack Webhook URL
 WEBHOOK_URL = "https://hooks.slack.com/services/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"
 
 try:
     USER_ID = "dyshin"
     USER_PW = "workMR**1201"
 
-    # 1) 인트라넷 로그인
+    # ✅ (추가) 로그인 충돌 방지: 기존 세션이 있다면 강제 로그아웃
     driver.get("https://mail.mariababy.com/")
     time.sleep(1)
     driver.find_element(By.ID, "txtUserid").send_keys(USER_ID)
@@ -40,15 +42,14 @@ try:
     print("Login submitted")
     time.sleep(2)
 
-    # 이미 로그인된 세션 경고창 처리
     try:
-        alert = driver.switch_to.alert
+        alert = driver.switch_to.alert  # 현재 Alert 창이 있는지 확인
         alert_text = alert.text
         print(f"Alert detected: {alert_text}")
         if "Already logged in another place" in alert_text:
             print("Closing existing session and continuing login...")
-            alert.accept()
-            time.sleep(2)
+            alert.accept()  # "예" 버튼을 눌러 기존 세션 강제 종료
+            time.sleep(2)  # Alert 닫힌 후 대기
     except NoAlertPresentException:
         print("No existing login alert detected, proceeding normally.")
 
@@ -70,8 +71,8 @@ try:
     driver.get(post_link)
     time.sleep(2)
 
-    # 3) 본문 내 식단표 테이블 추출
-    table_elem = driver.find_element(By.CLASS_NAME, "__se_tbl_ext")
+    # 3) 본문 내 식단표 테이블만 추출
+    table_elem = driver.find_element(By.CLASS_NAME, "__se_tbl_ext")  # <table class="__se_tbl_ext">
     table_html = table_elem.get_attribute("outerHTML")
 
     # 4) pandas로 파싱
@@ -96,7 +97,7 @@ try:
         else:
             dates.append(str(val).strip())
 
-    # 날짜-메뉴 dict
+    # 메뉴 dict
     menu_dict = {}
     for d in dates:
         if d:
@@ -108,8 +109,6 @@ try:
         for col_idx, date_str in enumerate(dates, start=1):
             if not date_str:
                 continue
-
-            # 범위 체크
             if col_idx < len(row_data):
                 cell_val = row_data[col_idx]
             else:
@@ -118,17 +117,15 @@ try:
             if pd.isna(cell_val):
                 continue
 
-            # 값 파싱
-            cell_text = str(cell_val).strip()
             # 괄호 제거
+            cell_text = str(cell_val).strip()
             cell_text = re.sub(r"\(.*?\)", "", cell_text)
-            # 줄바꿈 분리
             lines = [ln.strip() for ln in cell_text.split("\n") if ln.strip()]
 
             for ln in lines:
                 menu_dict[date_str].append(ln)
 
-    # 8) 연속된 동일 항목 제거
+    # 8) 중복 제거 (연속된 동일 항목)
     for d in menu_dict:
         original_list = menu_dict[d]
         deduplicated_list = []
@@ -137,16 +134,18 @@ try:
                 deduplicated_list.append(m)
         menu_dict[d] = deduplicated_list
 
-    # 9) Slack Block Kit 구성
+    # ------------------
+    # 9) Block Kit Divider 방식
+    # ------------------
+    # 날짜(월/화/수...) + 메뉴를 section 블록에 담고,
+    # 날짜 사이마다 divider 추가
 
-    # 날짜 필터링 (예: 월~금만) -> 원하는 경우에만 적용
-    # 여기서는 일단 모든 날짜 사용
+    # 모든 날짜 사용 (필요시 월~금 필터링 등 가능)
     filtered_dates = [d for d in dates if d in menu_dict]
 
-    # 블록 배열
     blocks = []
 
-    # (선택) 헤더 블록 (식단표 제목)
+    # (선택) 제목 블록
     title_block = {
         "type": "header",
         "text": {
@@ -157,28 +156,25 @@ try:
     }
     blocks.append(title_block)
 
-    # 날짜 + 메뉴 표시 + divider
+    # 날짜별 section + divider
     for d in filtered_dates:
-        # 왼쪽 필드 (날짜)
         left_field = {
             "type": "mrkdwn",
             "text": f"*{d}*"
         }
-        # 오른쪽 필드 (메뉴들 줄바꿈)
         menu_text = "\n".join(menu_dict[d]) if d in menu_dict else "(메뉴 없음)"
         right_field = {
             "type": "mrkdwn",
             "text": menu_text
         }
 
-        # 날짜 한 건 = fields 2개
         day_block = {
             "type": "section",
             "fields": [left_field, right_field]
         }
         blocks.append(day_block)
 
-        # 날짜 사이에 divider 추가
+        # divider 추가
         blocks.append({"type": "divider"})
 
     # 마지막 divider 제거(원한다면)
