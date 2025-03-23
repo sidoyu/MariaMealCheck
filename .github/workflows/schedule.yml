@@ -2,13 +2,12 @@ name: Run Selenium Script
 
 on:
   schedule:
-    - cron: "30 22 * * 0"  # 매주 월요일 07:30 AM (KST 기준, UTC+9)
-  workflow_dispatch:  # ✅ 수동 실행 기능 추가!
-
+    # 기존: "30 22 * * 0" => (일) 22:30 UTC => (월) 07:30 KST
+    - cron: "30 21 * * 0"  # ✅ (일) 21:30 UTC => (월) 06:30 KST
+  workflow_dispatch:  # 수동 실행 기능
 jobs:
   run_script:
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
