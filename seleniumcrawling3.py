@@ -27,7 +27,7 @@ driver = webdriver.Chrome(
 print("DEBUG: RUNNING seleniumcrawling3.py - HEADLESS MODE ENABLED")
 
 # Slack Webhook URL
-WEBHOOK_URL = "https://hooks.slack.com/services/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"
+WEBHOOK_URL = "https://hooks.slack.com/services/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"
 
 try:
     USER_ID = "dyshin"
