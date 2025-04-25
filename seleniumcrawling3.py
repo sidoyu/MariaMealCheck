@@ -5,7 +5,6 @@ import json
 import requests
 import pandas as pd
 import numpy as np
-
 from io import StringIO
 from datetime import date
 from selenium import webdriver
@@ -81,13 +80,15 @@ try:
         row = df.iloc[row_idx].tolist()
         for col_idx, date_str in enumerate(dates, start=1):
             if date_str and col_idx < len(row) and not pd.isna(row[col_idx]):
-                lines = [ln.strip() for ln in str(row[col_idx]).split("\n") if ln.strip()]
+                cell_text = str(row[col_idx]).strip()
+                cell_text = re.sub(r"\(.*?\)", "", cell_text)  # ✅ 괄호 안 원산지 정보 제거
+                lines = [ln.strip() for ln in cell_text.split("\n") if ln.strip()]
                 menu_dict[date_str].extend(lines)
 
     for d in menu_dict:
         menu_dict[d] = [m for i, m in enumerate(menu_dict[d]) if i == 0 or m != menu_dict[d][i - 1]]
 
-    # 🔄 Save to latest_meal.json
+    # ✅ latest_meal.json 저장
     today = date.today()
     json_dict = {}
     for key in menu_dict:
@@ -101,7 +102,7 @@ try:
         json.dump(json_dict, f, ensure_ascii=False, indent=2)
     print("✅ latest_meal.json 저장 완료")
 
-    # Slack Block Kit 메시지 전송
+    # ✅ Slack 전송 (Block Kit)
     blocks = [{"type": "header", "text": {"type": "plain_text", "text": post_title, "emoji": True}}]
     for d in dates:
         if d in menu_dict:
