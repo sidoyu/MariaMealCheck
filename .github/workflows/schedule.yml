@@ -2,12 +2,13 @@ name: Run Selenium Script
 
 on:
   schedule:
-    # 기존: "30 22 * * 0" => (일) 22:30 UTC => (월) 07:30 KST
-    - cron: "30 21 * * 0"  # ✅ (일) 21:30 UTC => (월) 06:30 KST
-  workflow_dispatch:  # 수동 실행 기능
+    - cron: "30 21 * * 0"  # 매주 월요일 오전 6:30 (KST)
+  workflow_dispatch:
+
 jobs:
   run_script:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -21,4 +22,6 @@ jobs:
         run: pip install requests selenium pandas numpy lxml webdriver-manager
 
       - name: Run Selenium Script
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python seleniumcrawling3.py
