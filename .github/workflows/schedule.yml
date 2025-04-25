@@ -2,7 +2,7 @@ name: Run Selenium Script
 
 on:
   schedule:
-    - cron: "30 21 * * 0"  # 매주 월요일 오전 6:30 (KST)
+    - cron: "30 21 * * 0"  # 매주 월요일 06:30 (KST)
   workflow_dispatch:
 
 jobs:
@@ -25,3 +25,13 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python seleniumcrawling3.py
+
+      - name: Commit updated latest_meal.json
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add latest_meal.json || true
+          git diff --cached --quiet || git commit -m "🤖 latest_meal.json 자동 커밋"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
