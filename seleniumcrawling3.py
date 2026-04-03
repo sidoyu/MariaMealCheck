@@ -29,8 +29,8 @@ print("DEBUG: RUNNING seleniumcrawling3.py - HEADLESS MODE ENABLED")
 WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
 
 try:
-    USER_ID = "dyshin"
-    USER_PW = "workMR**1201"
+    USER_ID = os.environ.get("MAIL_USER_ID")
+    USER_PW = os.environ.get("MAIL_USER_PW")
 
     driver.get("https://mail.mariababy.com/")
     time.sleep(1)

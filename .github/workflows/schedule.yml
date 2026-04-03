@@ -24,6 +24,8 @@ jobs:
       - name: Run Selenium Script
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          MAIL_USER_ID: ${{ secrets.MAIL_USER_ID }}
+          MAIL_USER_PW: ${{ secrets.MAIL_USER_PW }}
         run: python seleniumcrawling3.py
 
       - name: Commit updated latest_meal.json
