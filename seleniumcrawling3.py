@@ -5,8 +5,9 @@ import json
 import requests
 import pandas as pd
 import numpy as np
+from datetime import datetime, date
+
 from io import StringIO
-from datetime import date
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -81,14 +82,14 @@ try:
         for col_idx, date_str in enumerate(dates, start=1):
             if date_str and col_idx < len(row) and not pd.isna(row[col_idx]):
                 cell_text = str(row[col_idx]).strip()
-                cell_text = re.sub(r"\(.*?\)", "", cell_text)  # ✅ 괄호 안 원산지 정보 제거
+                cell_text = re.sub(r"\(.*?\)", "", cell_text)
                 lines = [ln.strip() for ln in cell_text.split("\n") if ln.strip()]
                 menu_dict[date_str].extend(lines)
 
     for d in menu_dict:
         menu_dict[d] = [m for i, m in enumerate(menu_dict[d]) if i == 0 or m != menu_dict[d][i - 1]]
 
-    # ✅ latest_meal.json 저장
+    # latest_meal.json 저장
     today = date.today()
     json_dict = {}
     for key in menu_dict:
@@ -100,9 +101,9 @@ try:
             print(f"날짜 파싱 오류: {key} → {e}")
     with open("latest_meal.json", "w", encoding="utf-8") as f:
         json.dump(json_dict, f, ensure_ascii=False, indent=2)
-    print("✅ latest_meal.json 저장 완료")
+    print("latest_meal.json 저장 완료")
 
-    # ✅ Slack 전송 (Block Kit)
+    # Slack 전송 (Block Kit)
     blocks = [{"type": "header", "text": {"type": "plain_text", "text": post_title, "emoji": True}}]
     for d in dates:
         if d in menu_dict:
@@ -120,9 +121,31 @@ try:
     payload = {"blocks": blocks}
     resp = requests.post(WEBHOOK_URL, json=payload)
     if resp.status_code == 200:
-        print("✅ Slack 메시지 전송 성공")
+        print("Slack 메시지 전송 성공")
     else:
-        print(f"❌ Slack 메시지 전송 실패: {resp.status_code}")
+        print(f"Slack 메시지 전송 실패: {resp.status_code}")
+
+    # 카카오톡 전송 - 오늘 날짜에 해당하는 메뉴만 발송
+    from kakao_send import send_to_all
+
+    today_str = datetime.now().strftime("%-m/%-d")  # 예: "4/3"
+    today_menu = None
+    today_date_key = None
+
+    filtered_dates = [d for d in dates if d in menu_dict]
+    for d in filtered_dates:
+        if today_str in d:
+            today_date_key = d
+            today_menu = menu_dict.get(d, [])
+            break
+
+    if today_menu:
+        menu_text = "\n".join(today_menu)
+        print(f"\n===== 카카오톡 발송 ({today_date_key}) =====")
+        print(menu_text)
+        send_to_all(post_title, f"{today_date_key}\n\n{menu_text}")
+    else:
+        print(f"\n오늘({today_str}) 식단 정보가 없습니다. 카카오톡 발송 생략.")
 
 finally:
     driver.quit()
