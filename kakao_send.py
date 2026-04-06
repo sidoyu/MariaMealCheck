@@ -9,7 +9,7 @@ ALIGO_API_KEY = os.environ.get("ALIGO_API_KEY", "7k7x7th7425mdzj10hsdbz7ckloyogp
 ALIGO_USER_ID = os.environ.get("ALIGO_USER_ID", "sidoyu")
 ALIGO_SENDER_KEY = os.environ.get("ALIGO_SENDER_KEY", "1ad86f2ec6662a73514aba2de3a51e2909527962")
 ALIGO_SENDER = os.environ.get("ALIGO_SENDER", "01020241731")
-TEMPLATE_CODE = "UG_7783"
+TEMPLATE_CODE = "UG_7884"
 
 # 수신자 전화번호 목록 (동료 추가 시 여기에 번호 추가)
 RECEIVERS = os.environ.get("ALIGO_RECEIVERS", "").split(",")
@@ -31,7 +31,7 @@ def send_alimtalk(title, date_str, menu_text):
         "sender": ALIGO_SENDER,
     }
 
-    message_content = f"[{title}]\n\n{date_str}\n\n{menu_text}"
+    message_content = f"[구내식당 식단 안내]\n\n{date_str} 식단표\n\n{menu_text}\n\n※ 메뉴는 사정에 따라 변경될 수 있습니다."
 
     for i, phone in enumerate(receivers, start=1):
         data[f"receiver_{i}"] = phone
