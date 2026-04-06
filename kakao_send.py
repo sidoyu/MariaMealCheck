@@ -1,110 +1,54 @@
 """
-카카오톡 메시지 발송 모듈.
-- 저장된 토큰으로 "나에게 보내기" API를 사용하여 각 동료에게 식단 발송
-- 토큰 만료 시 자동 갱신
+알리고 알림톡 API를 통한 카카오톡 식단 알림 발송 모듈.
 """
 
 import os
-import json
 import requests
 
-REST_API_KEY = os.environ.get("KAKAO_REST_API_KEY", "642d14a35142a36d0b17431b8ce3924b")
-CLIENT_SECRET = os.environ.get("KAKAO_CLIENT_SECRET", "AEKncVr3gYDDWI9qk18PecV8GRKXddff")
-TOKEN_FILE = "kakao_tokens.json"
+ALIGO_API_KEY = os.environ.get("ALIGO_API_KEY", "7k7x7th7425mdzj10hsdbz7ckloyogpg")
+ALIGO_USER_ID = os.environ.get("ALIGO_USER_ID", "sidoyu")
+ALIGO_SENDER_KEY = os.environ.get("ALIGO_SENDER_KEY", "1ad86f2ec6662a73514aba2de3a51e2909527962")
+ALIGO_SENDER = os.environ.get("ALIGO_SENDER", "01020241731")
+TEMPLATE_CODE = "UG_7783"
+
+# 수신자 전화번호 목록 (동료 추가 시 여기에 번호 추가)
+RECEIVERS = os.environ.get("ALIGO_RECEIVERS", "").split(",")
+# 예: ALIGO_RECEIVERS="01012345678,01087654321,..."
 
 
-def load_tokens():
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def save_tokens(tokens):
-    with open(TOKEN_FILE, "w") as f:
-        json.dump(tokens, f, indent=2, ensure_ascii=False)
-
-
-def refresh_access_token(user_id, user_data):
-    """Refresh Token으로 Access Token 갱신"""
-    resp = requests.post(
-        "https://kauth.kakao.com/oauth/token",
-        data={
-            "grant_type": "refresh_token",
-            "client_id": REST_API_KEY,
-            "client_secret": CLIENT_SECRET,
-            "refresh_token": user_data["refresh_token"],
-        },
-    )
-
-    if resp.status_code != 200:
-        print(f"[{user_data['nickname']}] 토큰 갱신 실패: {resp.text}")
-        return None
-
-    new_data = resp.json()
-    user_data["access_token"] = new_data["access_token"]
-    # refresh_token이 응답에 포함되면 업데이트 (만료 임박 시 새로 발급됨)
-    if "refresh_token" in new_data:
-        user_data["refresh_token"] = new_data["refresh_token"]
-
-    return user_data
-
-
-def send_kakao_message(access_token, title, menu_text):
-    """나에게 보내기 API로 텍스트 메시지 발송"""
-    import json as _json
-
-    template_object = {
-        "object_type": "text",
-        "text": f"[{title}]\n\n{menu_text}",
-        "link": {
-            "web_url": "https://mail.mariababy.com/bbs/bbs_list.aspx?bbs_num=41",
-            "mobile_web_url": "https://mail.mariababy.com/bbs/bbs_list.aspx?bbs_num=41",
-        },
-        "button_title": "식단표 원본 보기",
-    }
-
-    resp = requests.post(
-        "https://kapi.kakao.com/v2/api/talk/memo/default/send",
-        headers={"Authorization": f"Bearer {access_token}"},
-        data={"template_object": _json.dumps(template_object)},
-    )
-    return resp
-
-
-def send_to_all(title, today_menu_text):
-    """
-    등록된 모든 사용자에게 카카오톡 메시지 발송.
-    각 사용자의 "나에게 보내기" API를 호출하므로 친구 권한 불필요.
-    """
-    tokens = load_tokens()
-    if not tokens:
-        print("등록된 카카오톡 사용자가 없습니다.")
+def send_alimtalk(title, date_str, menu_text):
+    """등록된 모든 수신자에게 알림톡 발송"""
+    receivers = [r.strip() for r in RECEIVERS if r.strip()]
+    if not receivers:
+        print("등록된 수신자가 없습니다.")
         return
 
-    updated = False
-    for user_id, user_data in tokens.items():
-        nickname = user_data.get("nickname", user_id)
+    data = {
+        "apikey": ALIGO_API_KEY,
+        "userid": ALIGO_USER_ID,
+        "senderkey": ALIGO_SENDER_KEY,
+        "tpl_code": TEMPLATE_CODE,
+        "sender": ALIGO_SENDER,
+    }
 
-        # 메시지 발송 시도
-        resp = send_kakao_message(user_data["access_token"], title, today_menu_text)
+    message_content = f"[{title}]\n\n{date_str}\n\n{menu_text}"
 
-        # 토큰 만료 시 갱신 후 재시도
-        if resp.status_code == 401:
-            print(f"[{nickname}] 토큰 만료, 갱신 시도...")
-            refreshed = refresh_access_token(user_id, user_data)
-            if refreshed:
-                tokens[user_id] = refreshed
-                updated = True
-                resp = send_kakao_message(refreshed["access_token"], title, today_menu_text)
-            else:
-                print(f"[{nickname}] 토큰 갱신 실패, 재인증 필요")
-                continue
+    for i, phone in enumerate(receivers, start=1):
+        data[f"receiver_{i}"] = phone
+        data[f"subject_{i}"] = "식단 알림"
+        data[f"message_{i}"] = message_content
 
-        if resp.status_code == 200:
-            print(f"[{nickname}] 카카오톡 발송 성공")
-        else:
-            print(f"[{nickname}] 카카오톡 발송 실패: {resp.status_code} {resp.text}")
+    resp = requests.post(
+        "https://kakaoapi.aligo.in/akv10/alimtalk/send/",
+        data=data,
+    )
+    result = resp.json()
 
-    if updated:
-        save_tokens(tokens)
+    if str(result.get("code")) == "0":
+        scnt = result.get("info", {}).get("scnt", 0)
+        fcnt = result.get("info", {}).get("fcnt", 0)
+        print(f"알림톡 발송 완료: 성공 {scnt}건, 실패 {fcnt}건")
+    else:
+        print(f"알림톡 발송 실패: {result}")
+
+    return result
