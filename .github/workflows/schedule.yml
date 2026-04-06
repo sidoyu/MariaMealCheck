@@ -21,24 +21,16 @@ jobs:
       - name: Install dependencies
         run: pip install requests selenium pandas numpy lxml webdriver-manager
 
-      - name: Restore Kakao tokens
-        env:
-          KAKAO_TOKENS: ${{ secrets.KAKAO_TOKENS }}
-        run: |
-          if [ -n "$KAKAO_TOKENS" ]; then
-            echo "$KAKAO_TOKENS" > kakao_tokens.json
-            echo "Kakao tokens restored."
-          else
-            echo "No Kakao tokens found in secrets."
-          fi
-
       - name: Run Selenium Script
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           MAIL_USER_ID: ${{ secrets.MAIL_USER_ID }}
           MAIL_USER_PW: ${{ secrets.MAIL_USER_PW }}
-          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
-          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          ALIGO_API_KEY: ${{ secrets.ALIGO_API_KEY }}
+          ALIGO_USER_ID: ${{ secrets.ALIGO_USER_ID }}
+          ALIGO_SENDER_KEY: ${{ secrets.ALIGO_SENDER_KEY }}
+          ALIGO_SENDER: ${{ secrets.ALIGO_SENDER }}
+          ALIGO_RECEIVERS: ${{ secrets.ALIGO_RECEIVERS }}
         run: python seleniumcrawling3.py
 
       - name: Commit updated latest_meal.json
@@ -50,11 +42,3 @@ jobs:
           git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload updated tokens
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kakao-tokens
-          path: kakao_tokens.json
-          retention-days: 90
