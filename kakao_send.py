@@ -1,23 +1,23 @@
 """
-알리고 알림톡 API를 통한 카카오톡 식단 알림 발송 모듈.
+알리고 브랜드메시지(친구톡) API를 통한 카카오톡 식단 알림 발송 모듈.
 """
 
 import os
+import json
 import requests
 
 ALIGO_API_KEY = os.environ.get("ALIGO_API_KEY", "7k7x7th7425mdzj10hsdbz7ckloyogpg")
 ALIGO_USER_ID = os.environ.get("ALIGO_USER_ID", "sidoyu")
 ALIGO_SENDER_KEY = os.environ.get("ALIGO_SENDER_KEY", "1ad86f2ec6662a73514aba2de3a51e2909527962")
 ALIGO_SENDER = os.environ.get("ALIGO_SENDER", "01020241731")
-TEMPLATE_CODE = "UG_7884"
+TEMPLATE_CODE = "AAAA1650"
 
-# 수신자 전화번호 목록 (동료 추가 시 여기에 번호 추가)
+# 수신자 전화번호 목록
 RECEIVERS = os.environ.get("ALIGO_RECEIVERS", "").split(",")
-# 예: ALIGO_RECEIVERS="01012345678,01087654321,..."
 
 
-def send_alimtalk(title, date_str, menu_text):
-    """등록된 모든 수신자에게 알림톡 발송"""
+def send_brandtalk(date_str, menu_text):
+    """등록된 모든 수신자에게 브랜드메시지 발송"""
     receivers = [r.strip() for r in RECEIVERS if r.strip()]
     if not receivers:
         print("등록된 수신자가 없습니다.")
@@ -27,19 +27,20 @@ def send_alimtalk(title, date_str, menu_text):
         "apikey": ALIGO_API_KEY,
         "userid": ALIGO_USER_ID,
         "senderkey": ALIGO_SENDER_KEY,
-        "tpl_code": TEMPLATE_CODE,
         "sender": ALIGO_SENDER,
+        "template_code": TEMPLATE_CODE,
+        "advert_yn": "N",
     }
-
-    message_content = f"[구내식당 식단 안내]\n\n{date_str} 식단표\n\n{menu_text}\n\n※ 메뉴는 사정에 따라 변경될 수 있습니다."
 
     for i, phone in enumerate(receivers, start=1):
         data[f"receiver_{i}"] = phone
-        data[f"subject_{i}"] = "식단 알림"
-        data[f"message_{i}"] = message_content
+        data[f"receiver_{i}_message"] = json.dumps({
+            "#{날짜}": date_str,
+            "#{메뉴}": menu_text,
+        }, ensure_ascii=False)
 
     resp = requests.post(
-        "https://kakaoapi.aligo.in/akv10/alimtalk/send/",
+        "https://kakaoapi.aligo.in/brandtalk/template/send/",
         data=data,
     )
     result = resp.json()
@@ -47,8 +48,8 @@ def send_alimtalk(title, date_str, menu_text):
     if str(result.get("code")) == "0":
         scnt = result.get("info", {}).get("scnt", 0)
         fcnt = result.get("info", {}).get("fcnt", 0)
-        print(f"알림톡 발송 완료: 성공 {scnt}건, 실패 {fcnt}건")
+        print(f"브랜드메시지 발송 완료: 성공 {scnt}건, 실패 {fcnt}건")
     else:
-        print(f"알림톡 발송 실패: {result}")
+        print(f"브랜드메시지 발송 실패: {result}")
 
     return result

@@ -125,8 +125,8 @@ try:
     else:
         print(f"Slack 메시지 전송 실패: {resp.status_code}")
 
-    # 알림톡 전송 - 오늘 날짜에 해당하는 메뉴만 발송
-    from kakao_send import send_alimtalk
+    # 브랜드메시지 전송 - 오늘 날짜에 해당하는 메뉴만 발송
+    from kakao_send import send_brandtalk
 
     today_str = datetime.now().strftime("%-m/%-d")  # 예: "4/7"
     today_menu = None
@@ -141,11 +141,11 @@ try:
 
     if today_menu:
         menu_text = "\n".join(today_menu)
-        print(f"\n===== 알림톡 발송 ({today_date_key}) =====")
+        print(f"\n===== 브랜드메시지 발송 ({today_date_key}) =====")
         print(menu_text)
-        send_alimtalk(post_title, today_date_key, menu_text)
+        send_brandtalk(today_date_key, menu_text)
     else:
-        print(f"\n오늘({today_str}) 식단 정보가 없습니다. 알림톡 발송 생략.")
+        print(f"\n오늘({today_str}) 식단 정보가 없습니다. 브랜드메시지 발송 생략.")
 
 finally:
     driver.quit()
