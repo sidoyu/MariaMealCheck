@@ -1,9 +1,9 @@
 name: Run Meal Check & Notify
 
 on:
-  schedule:
-    - cron: "30 2 * * 1-5"  # 평일 11:30 AM KST (UTC+9)
-  workflow_dispatch:  # 수동 실행
+  # schedule:
+  #   - cron: "30 2 * * 1-5"  # 평일 11:30 AM KST (UTC+9)
+  workflow_dispatch:  # 수동 실행만 가능
 
 jobs:
   run_script:
