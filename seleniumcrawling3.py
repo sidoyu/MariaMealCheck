@@ -43,10 +43,9 @@ try:
 
     try:
         alert = driver.switch_to.alert
-        if "Already logged in another place" in alert.text:
-            print("Closing existing session and continuing login...")
-            alert.accept()
-            time.sleep(2)
+        print(f"Alert detected: {alert.text}")
+        alert.accept()
+        time.sleep(2)
     except NoAlertPresentException:
         print("No existing login alert detected.")
 

@@ -45,7 +45,8 @@ def send_brandtalk(date_str, menu_text):
     )
     result = resp.json()
 
-    if str(result.get("code")) == "0":
+    code = result.get("code")
+    if code in (0, 1, "0", "1"):
         scnt = result.get("info", {}).get("scnt", 0)
         fcnt = result.get("info", {}).get("fcnt", 0)
         print(f"브랜드메시지 발송 완료: 성공 {scnt}건, 실패 {fcnt}건")
