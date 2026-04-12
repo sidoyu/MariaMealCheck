@@ -55,7 +55,7 @@ def get_today_menu():
 
 
 def try_crawl_fallback():
-    """오늘 데이터가 없을 때 즉석 크롤링 재시도."""
+    """오늘 데이터가 없을 때 즉석 크롤링 재시도 + GitHub에 push (Worker 동기화)."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     print("오늘 식단 데이터 없음 → 즉석 크롤링 재시도")
     try:
@@ -70,6 +70,28 @@ def try_crawl_fallback():
             print(f"[crawl stderr] {result.stderr[-500:]}")
     except Exception as e:
         print(f"크롤링 재시도 오류: {e}")
+        return
+
+    # 크롤링 결과를 GitHub에 push (Cloudflare Worker /menu 페이지 동기화)
+    try:
+        subprocess.run(["git", "-C", script_dir, "add", "latest_meal.json"], check=False, timeout=10)
+        commit = subprocess.run(
+            ["git", "-C", script_dir, "commit", "-m", f"🤖 폴백 크롤링 자동 커밋 ({datetime.now().strftime('%Y-%m-%d %H:%M')})"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if commit.returncode == 0:
+            push = subprocess.run(
+                ["git", "-C", script_dir, "push", "origin", "main"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if push.returncode == 0:
+                print("GitHub push 성공 (Worker 동기화)")
+            else:
+                print(f"GitHub push 실패: {push.stderr[-300:]}")
+        else:
+            print(f"[git commit] {commit.stdout[-200:]} {commit.stderr[-200:]}")
+    except Exception as e:
+        print(f"git push 오류: {e}")
 
 
 def notify_failure_slack():

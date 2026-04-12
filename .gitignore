@@ -2,4 +2,3 @@ venv/
 __pycache__/
 kakao_tokens.json
 run_meal_check.sh
-run_crawl.sh
