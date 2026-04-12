@@ -1,112 +1,104 @@
 """
 카카오톡 식단 알림 전용 스크립트 (Mac Mini crontab용).
-오늘 날짜의 식단만 크롤링하여 브랜드메시지로 발송.
+latest_meal.json에서 오늘 날짜의 식단을 찾아 알림톡으로 발송.
 """
 
-import time
-import re
+import json
 import os
+import subprocess
+import sys
 import requests
-import pandas as pd
-import numpy as np
 from datetime import datetime
 
-from io import StringIO
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoAlertPresentException
+from kakao_send import send_alimtalk
 
-from kakao_send import send_brandtalk
+APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL", "https://script.google.com/macros/s/AKfycbxD8lBmeVQHUYA2lGRz8bHeGUdx4zXFmCBzbX_cnjtv0Ao9YViNr_p0sAQAf_fplJdPzg/exec")
+MEAL_JSON_PATH = os.path.join(os.path.dirname(__file__), "latest_meal.json")
 
-options = Options()
-options.add_argument("--headless")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
 
-driver = webdriver.Chrome(
-    service=Service(ChromeDriverManager().install()),
-    options=options
-)
+def get_subscribers():
+    """Apps Script 웹앱에서 활성 구독자 목록 가져오기. 실패 시 환경변수 폴백."""
+    if APPS_SCRIPT_URL:
+        try:
+            resp = requests.get(APPS_SCRIPT_URL, params={"action": "list"}, timeout=10)
+            data = resp.json()
+            subscribers = data.get("subscribers", [])
+            if subscribers:
+                print(f"구독자 {len(subscribers)}명 로드 (Google Sheets)")
+                return subscribers
+        except Exception as e:
+            print(f"구독자 목록 조회 실패, 환경변수 폴백: {e}")
 
-try:
-    USER_ID = os.environ.get("MAIL_USER_ID")
-    USER_PW = os.environ.get("MAIL_USER_PW")
+    fallback = os.environ.get("ALIGO_RECEIVERS", "")
+    receivers = [r.strip() for r in fallback.split(",") if r.strip()]
+    print(f"구독자 {len(receivers)}명 로드 (환경변수 폴백)")
+    return receivers
 
-    driver.get("https://mail.mariababy.com/")
-    time.sleep(1)
-    driver.find_element(By.ID, "txtUserid").send_keys(USER_ID)
-    driver.find_element(By.ID, "txtPassword").send_keys(USER_PW)
-    driver.find_element(By.ID, "imgLogin").click()
-    time.sleep(2)
 
+def get_today_menu():
+    """latest_meal.json에서 오늘 식단 가져오기."""
+    if not os.path.exists(MEAL_JSON_PATH):
+        print(f"식단 파일이 없습니다: {MEAL_JSON_PATH}")
+        return None, None
+
+    with open(MEAL_JSON_PATH, "r", encoding="utf-8") as f:
+        meal_data = json.load(f)
+
+    today_key = datetime.now().strftime("%Y-%m-%d")
+    today_display = datetime.now().strftime("%-m/%-d") + "(" + "월화수목금토일"[datetime.now().weekday()] + ")"
+
+    if today_key in meal_data:
+        return today_display, meal_data[today_key]
+
+    print(f"오늘({today_key}) 식단 정보가 없습니다.")
+    return None, None
+
+
+def try_crawl_fallback():
+    """오늘 데이터가 없을 때 즉석 크롤링 재시도."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    print("오늘 식단 데이터 없음 → 즉석 크롤링 재시도")
     try:
-        alert = driver.switch_to.alert
-        print(f"Alert detected: {alert.text}")
-        alert.accept()
-        time.sleep(2)
-    except NoAlertPresentException:
+        result = subprocess.run(
+            [sys.executable, os.path.join(script_dir, "seleniumcrawling3.py")],
+            cwd=script_dir,
+            capture_output=True, text=True, timeout=180,
+        )
+        if result.stdout:
+            print(result.stdout[-800:])
+        if result.returncode != 0 and result.stderr:
+            print(f"[crawl stderr] {result.stderr[-500:]}")
+    except Exception as e:
+        print(f"크롤링 재시도 오류: {e}")
+
+
+def notify_failure_slack():
+    slack = os.environ.get("SLACK_WEBHOOK_URL")
+    if not slack:
+        return
+    try:
+        requests.post(
+            slack,
+            json={"text": f":warning: 식단 알림 발송 실패: {datetime.now().strftime('%Y-%m-%d')} 데이터 확보 불가"},
+            timeout=5,
+        )
+    except Exception:
         pass
 
-    if "ID 와 비밀번호를 정확히 넣어 주십시오." in driver.page_source:
-        print("Login failed.")
-        driver.quit()
-        exit()
-    print("Login successful")
 
-    driver.get("https://mail.mariababy.com/bbs/bbs_list.aspx?bbs_num=41")
-    time.sleep(1)
-    latest_post = driver.find_element(By.XPATH, '//a[contains(@href, "read_bbs.aspx")]/span')
-    post_title = latest_post.text.strip()
-    post_link = latest_post.find_element(By.XPATH, "./..").get_attribute("href")
-    print(f"Latest Post: {post_title}")
+if __name__ == "__main__":
+    date_str, menu_list = get_today_menu()
 
-    driver.get(post_link)
-    time.sleep(2)
+    if not menu_list:
+        try_crawl_fallback()
+        date_str, menu_list = get_today_menu()
 
-    table_elem = driver.find_element(By.CLASS_NAME, "__se_tbl_ext")
-    table_html = table_elem.get_attribute("outerHTML")
-
-    df = pd.read_html(StringIO(table_html), flavor="lxml")[0]
-    if df.shape[0] > 9:
-        df = df.iloc[:-3, :]
-
-    header_row = df.iloc[0].tolist()
-    dates = [str(val).strip() if not pd.isna(val) else "" for val in header_row[1:]]
-    menu_dict = {d: [] for d in dates if d}
-
-    for row_idx in range(1, df.shape[0]):
-        row = df.iloc[row_idx].tolist()
-        for col_idx, date_str in enumerate(dates, start=1):
-            if date_str and col_idx < len(row) and not pd.isna(row[col_idx]):
-                cell_text = str(row[col_idx]).strip()
-                cell_text = re.sub(r"\(.*?\)", "", cell_text)
-                lines = [ln.strip() for ln in cell_text.split("\n") if ln.strip()]
-                menu_dict[date_str].extend(lines)
-
-    for d in menu_dict:
-        menu_dict[d] = [m for i, m in enumerate(menu_dict[d]) if i == 0 or m != menu_dict[d][i - 1]]
-
-    # 오늘 날짜 매칭
-    today_str = datetime.now().strftime("%-m/%-d")
-    today_menu = None
-    today_date_key = None
-
-    for d in menu_dict:
-        if today_str in d:
-            today_date_key = d
-            today_menu = menu_dict.get(d, [])
-            break
-
-    if today_menu:
-        menu_text = "\n".join(today_menu)
-        print(f"\n===== 브랜드메시지 발송 ({today_date_key}) =====")
+    if menu_list:
+        menu_text = "\n".join(menu_list)
+        print(f"\n===== 알림톡 발송 ({date_str}) =====")
         print(menu_text)
-        send_brandtalk(today_date_key, menu_text)
+        subscribers = get_subscribers()
+        send_alimtalk(date_str, menu_text, receivers=subscribers)
     else:
-        print(f"\n오늘({today_str}) 식단 정보가 없습니다. 발송 생략.")
-
-finally:
-    driver.quit()
+        print("발송 생략 — 오늘 데이터 확보 실패")
+        notify_failure_slack()

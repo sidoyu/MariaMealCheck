@@ -98,9 +98,19 @@ try:
             json_dict[full_date] = menu_dict[key]
         except Exception as e:
             print(f"날짜 파싱 오류: {key} → {e}")
-    with open("latest_meal.json", "w", encoding="utf-8") as f:
-        json.dump(json_dict, f, ensure_ascii=False, indent=2)
-    print("latest_meal.json 저장 완료")
+    # 기존 데이터와 병합 (다음 주 메뉴 크롤 시 이번 주 데이터 보존)
+    json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "latest_meal.json")
+    existing = {}
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+    merged = {**existing, **json_dict}
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
+    print(f"latest_meal.json 저장 완료 (기존 {len(existing)}건 + 신규 {len(json_dict)}건 → 총 {len(merged)}건)")
 
     # Slack 전송 (Block Kit)
     blocks = [{"type": "header", "text": {"type": "plain_text", "text": post_title, "emoji": True}}]
@@ -117,12 +127,15 @@ try:
     if blocks[-1]["type"] == "divider":
         blocks.pop()
 
-    payload = {"blocks": blocks}
-    resp = requests.post(WEBHOOK_URL, json=payload)
-    if resp.status_code == 200:
-        print("Slack 메시지 전송 성공")
+    if WEBHOOK_URL:
+        payload = {"blocks": blocks}
+        resp = requests.post(WEBHOOK_URL, json=payload)
+        if resp.status_code == 200:
+            print("Slack 메시지 전송 성공")
+        else:
+            print(f"Slack 메시지 전송 실패: {resp.status_code}")
     else:
-        print(f"Slack 메시지 전송 실패: {resp.status_code}")
+        print("SLACK_WEBHOOK_URL 미설정, Slack 전송 생략")
 
 finally:
     driver.quit()
