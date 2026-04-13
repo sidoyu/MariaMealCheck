@@ -13,6 +13,7 @@ from datetime import datetime
 from kakao_send import send_alimtalk
 
 APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL", "https://script.google.com/macros/s/AKfycbxD8lBmeVQHUYA2lGRz8bHeGUdx4zXFmCBzbX_cnjtv0Ao9YViNr_p0sAQAf_fplJdPzg/exec")
+APPS_SCRIPT_SECRET = os.environ.get("APPS_SCRIPT_SECRET", "")
 MEAL_JSON_PATH = os.path.join(os.path.dirname(__file__), "latest_meal.json")
 
 
@@ -20,12 +21,17 @@ def get_subscribers():
     """Apps Script 웹앱에서 활성 구독자 목록 가져오기. 실패 시 환경변수 폴백."""
     if APPS_SCRIPT_URL:
         try:
-            resp = requests.get(APPS_SCRIPT_URL, params={"action": "list"}, timeout=10)
+            params = {"action": "list"}
+            if APPS_SCRIPT_SECRET:
+                params["secret"] = APPS_SCRIPT_SECRET
+            resp = requests.get(APPS_SCRIPT_URL, params=params, timeout=10)
             data = resp.json()
             subscribers = data.get("subscribers", [])
             if subscribers:
                 print(f"구독자 {len(subscribers)}명 로드 (Google Sheets)")
                 return subscribers
+            if data.get("error") == "unauthorized":
+                print("구독자 목록 조회 실패: secret 인증 오류")
         except Exception as e:
             print(f"구독자 목록 조회 실패, 환경변수 폴백: {e}")
 
