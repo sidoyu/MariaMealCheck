@@ -17,8 +17,11 @@ APPS_SCRIPT_SECRET = os.environ.get("APPS_SCRIPT_SECRET", "")
 MEAL_JSON_PATH = os.path.join(os.path.dirname(__file__), "latest_meal.json")
 
 
-def get_subscribers():
-    """Apps Script 웹앱에서 활성 구독자 목록 가져오기. 실패 시 환경변수 폴백."""
+def get_subscribers_for_now():
+    """현재 시각에 해당하는 구독자만 필터하여 반환. 실패 시 환경변수 폴백 (11:30 슬롯만)."""
+    now = datetime.now()
+    current_slot = f"{now.hour:02d}:{now.minute // 30 * 30:02d}"
+
     if APPS_SCRIPT_URL:
         try:
             params = {"action": "list"}
@@ -26,19 +29,27 @@ def get_subscribers():
                 params["secret"] = APPS_SCRIPT_SECRET
             resp = requests.get(APPS_SCRIPT_URL, params=params, timeout=10)
             data = resp.json()
-            subscribers = data.get("subscribers", [])
-            if subscribers:
-                print(f"구독자 {len(subscribers)}명 로드 (Google Sheets)")
-                return subscribers
+
             if data.get("error") == "unauthorized":
                 print("구독자 목록 조회 실패: secret 인증 오류")
+            else:
+                detail = data.get("subscribers_detail", [])
+                total = data.get("count", len(detail))
+                matched = [s["phone"] for s in detail if s.get("time", "11:30") == current_slot]
+                print(f"구독자 총 {total}명 중 {current_slot} 슬롯 {len(matched)}명 발송 대상")
+                return matched
         except Exception as e:
             print(f"구독자 목록 조회 실패, 환경변수 폴백: {e}")
 
-    fallback = os.environ.get("ALIGO_RECEIVERS", "")
-    receivers = [r.strip() for r in fallback.split(",") if r.strip()]
-    print(f"구독자 {len(receivers)}명 로드 (환경변수 폴백)")
-    return receivers
+    # 폴백: 11:30 슬롯에서만 환경변수 수신자로 발송
+    if current_slot == "11:30":
+        fallback = os.environ.get("ALIGO_RECEIVERS", "")
+        receivers = [r.strip() for r in fallback.split(",") if r.strip()]
+        print(f"구독자 {len(receivers)}명 로드 (환경변수 폴백, 11:30 슬롯)")
+        return receivers
+
+    print(f"폴백 모드에서 {current_slot} 슬롯은 발송 대상 없음")
+    return []
 
 
 def get_today_menu():
@@ -123,10 +134,13 @@ if __name__ == "__main__":
 
     if menu_list:
         menu_text = "\n".join(menu_list)
-        print(f"\n===== 알림톡 발송 ({date_str}) =====")
-        print(menu_text)
-        subscribers = get_subscribers()
-        send_alimtalk(date_str, menu_text, receivers=subscribers)
+        subscribers = get_subscribers_for_now()
+        if not subscribers:
+            print(f"현재 슬롯에 발송 대상 없음 — 생략")
+        else:
+            print(f"\n===== 알림톡 발송 ({date_str}, {len(subscribers)}명) =====")
+            print(menu_text)
+            send_alimtalk(date_str, menu_text, receivers=subscribers)
     else:
         print("발송 생략 — 오늘 데이터 확보 실패")
         notify_failure_slack()

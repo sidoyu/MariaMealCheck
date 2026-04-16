@@ -5,19 +5,27 @@
  * 시트 구조 (시트명: subscribers)
  * A: 전화번호 (01012345678 형식)
  * B: 구독일시
+ * C: 알림시간 (HH:MM 형식, 기본값 "11:30")
  *
  * 엔드포인트:
- * GET  ?action=list          → 활성 구독자 목록 반환
- * POST ?action=subscribe     → 구독 신청
- * POST ?action=unsubscribe   → 구독 해지
+ * GET  ?action=list           → 활성 구독자 목록 반환 (시간 포함)
+ * GET  ?action=subscribe      → 구독 신청 (time 파라미터 optional, 기본 "11:30")
+ * GET  ?action=unsubscribe    → 구독 해지
+ * GET  ?action=update_time    → 알림 시간 변경
+ * GET  ?action=check          → 구독 여부 확인 (시간변경 페이지용)
  */
 
 const SHEET_NAME = "subscribers";
+const DEFAULT_TIME = "11:30";
+const VALID_TIMES = [
+  "08:00","08:30","09:00","09:30","10:00","10:30",
+  "11:00","11:30","12:00","12:30","13:00"
+];
 
 /** Script Property "SHARED_SECRET" 와 일치 여부 검증 */
 function verifySecret(e) {
   const expected = PropertiesService.getScriptProperties().getProperty("SHARED_SECRET");
-  if (!expected) return false; // secret 미설정이면 모두 차단
+  if (!expected) return false;
   return e.parameter.secret === expected;
 }
 
@@ -28,14 +36,26 @@ function doGet(e) {
 
   const action = e.parameter.action;
   const phone = normalizePhone(e.parameter.phone || "");
+  const time = e.parameter.time || DEFAULT_TIME;
 
   if (action === "list") {
     return jsonResponse(getActiveSubscribers());
   }
-  if (action === "subscribe" || action === "unsubscribe") {
+  if (action === "check") {
     if (!phone) return jsonResponse({ error: "invalid_phone", message: "유효하지 않은 전화번호입니다." });
-    if (action === "subscribe") return jsonResponse(subscribe(phone));
-    if (action === "unsubscribe") return jsonResponse(unsubscribe(phone));
+    return jsonResponse(checkSubscriber(phone));
+  }
+  if (action === "subscribe") {
+    if (!phone) return jsonResponse({ error: "invalid_phone", message: "유효하지 않은 전화번호입니다." });
+    return jsonResponse(subscribe(phone, time));
+  }
+  if (action === "unsubscribe") {
+    if (!phone) return jsonResponse({ error: "invalid_phone", message: "유효하지 않은 전화번호입니다." });
+    return jsonResponse(unsubscribe(phone));
+  }
+  if (action === "update_time") {
+    if (!phone) return jsonResponse({ error: "invalid_phone", message: "유효하지 않은 전화번호입니다." });
+    return jsonResponse(updateTime(phone, time));
   }
   return jsonResponse({ error: "invalid action" });
 }
@@ -57,6 +77,11 @@ function normalizePhone(raw) {
   return null;
 }
 
+/** 알림 시간 유효성 검증 */
+function validateTime(time) {
+  return VALID_TIMES.includes(time);
+}
+
 /** 셀 값에서 전화번호 읽기 (0 보정) */
 function readPhone(val) {
   let p = String(val);
@@ -64,8 +89,23 @@ function readPhone(val) {
   return p;
 }
 
-/** 구독 신청 */
-function subscribe(phone) {
+/** 셀 값에서 알림시간 읽기 (Date 객체 대응 — Sheets가 "11:30"을 Time으로 자동 변환하는 문제) */
+function readTime(val) {
+  if (!val) return DEFAULT_TIME;
+  if (val instanceof Date) {
+    const h = String(val.getHours()).padStart(2, "0");
+    const m = String(val.getMinutes()).padStart(2, "0");
+    const t = h + ":" + m;
+    return VALID_TIMES.includes(t) ? t : DEFAULT_TIME;
+  }
+  const t = String(val).trim();
+  return VALID_TIMES.includes(t) ? t : DEFAULT_TIME;
+}
+
+/** 구독 신청. time 파라미터 없으면 기본 11:30 */
+function subscribe(phone, time) {
+  if (!validateTime(time)) time = DEFAULT_TIME;
+
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   const data = sheet.getDataRange().getValues();
 
@@ -78,9 +118,9 @@ function subscribe(phone) {
   const newRow = sheet.getLastRow() + 1;
   sheet.getRange(newRow, 1).setNumberFormat("@").setValue(phone);
   sheet.getRange(newRow, 2).setValue(new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }));
+  sheet.getRange(newRow, 3).setNumberFormat("@").setValue(time);
   const count = sheet.getLastRow() - 1;
-  sendSlack("*:large_green_circle: 식단 알림 구독자 추가*\n현재 총 *`" + count + "명`* 구독 중");
-  return { status: "subscribed", message: "구독이 완료되었습니다!" };
+  return { status: "subscribed", message: "구독이 완료되었습니다!", count: count, time: time };
 }
 
 /** 구독 해지 */
@@ -92,25 +132,61 @@ function unsubscribe(phone) {
     if (readPhone(data[i][0]) === phone) {
       sheet.deleteRow(i + 1);
       const count = sheet.getLastRow() - 1;
-      sendSlack("*:red_circle: 식단 알림 구독자 해지*\n현재 총 *`" + count + "명`* 구독 중");
-      return { status: "unsubscribed", message: "구독이 해지되었습니다." };
+      return { status: "unsubscribed", message: "구독이 해지되었습니다.", count: count };
     }
   }
 
   return { status: "not_found", message: "이미 해지 처리된 번호입니다." };
 }
 
-/** 활성 구독자 목록 */
+/** 알림 시간 변경 */
+function updateTime(phone, time) {
+  if (!validateTime(time)) {
+    return { error: "invalid_time", message: "유효하지 않은 알림 시간입니다." };
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (readPhone(data[i][0]) === phone) {
+      sheet.getRange(i + 1, 3).setNumberFormat("@").setValue(time);
+      return { status: "time_updated", message: "알림 시간이 변경되었습니다!", time: time };
+    }
+  }
+
+  return { status: "not_subscribed", message: "구독 중인 번호가 아닙니다. 먼저 구독 신청을 해주세요!" };
+}
+
+/** 구독 여부 확인 (시간변경 페이지에서 사용) */
+function checkSubscriber(phone) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (readPhone(data[i][0]) === phone) {
+      return { status: "subscribed", time: readTime(data[i][2]) };
+    }
+  }
+
+  return { status: "not_subscribed" };
+}
+
+/** 활성 구독자 목록 (하위호환: subscribers 배열 + 상세: subscribers_detail) */
 function getActiveSubscribers() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   const data = sheet.getDataRange().getValues();
   const subscribers = [];
+  const detail = [];
 
   for (let i = 1; i < data.length; i++) {
-    subscribers.push(readPhone(data[i][0]));
+    const phone = readPhone(data[i][0]);
+    const time = readTime(data[i][2]);
+    subscribers.push(phone);
+    detail.push({ phone: phone, time: time });
   }
 
-  return { subscribers: subscribers, count: subscribers.length };
+  return { subscribers: subscribers, subscribers_detail: detail, count: subscribers.length };
 }
 
 /** Slack 알림 — Script Property "SLACK_WEBHOOK_URL" 사용 */
@@ -136,24 +212,30 @@ function jsonResponse(data, code) {
 }
 
 /**
- * 초기 설정: 시트 헤더 생성 (최초 1회 실행)
+ * 마이그레이션: C열 "알림시간" 추가 + 기존 구독자에 기본값 "11:30" 세팅
+ * Apps Script 편집기에서 수동 1회 실행
  */
-function initSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-  }
-  sheet.getRange(1, 1, 1, 2).setValues([["전화번호", "구독일시"]]);
+function migrateAddTimeColumn() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
 
-  const existing = [
-    "01020241731", "01052297713", "01063185542", "01089194740", "01088348475",
-    "01089474990", "01035804568", "01030082911", "01087864824", "01042477610"
-  ];
-  const now = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-  for (let i = 0; i < existing.length; i++) {
-    const row = i + 2;
-    sheet.getRange(row, 1).setNumberFormat("@").setValue(existing[i]);
-    sheet.getRange(row, 2).setValue(now);
+  // C1에 헤더 추가
+  sheet.getRange(1, 3).setValue("알림시간");
+
+  // 기존 구독자에 기본값 세팅 (C열이 비어있는 행만)
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    Logger.log("구독자 없음. 마이그레이션 완료.");
+    return;
   }
+
+  const timeCol = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+  let updated = 0;
+  for (let i = 0; i < timeCol.length; i++) {
+    if (!timeCol[i][0] || String(timeCol[i][0]).trim() === "") {
+      sheet.getRange(i + 2, 3).setNumberFormat("@").setValue(DEFAULT_TIME);
+      updated++;
+    }
+  }
+
+  Logger.log("마이그레이션 완료: " + updated + "명에 기본값 '" + DEFAULT_TIME + "' 세팅");
 }
