@@ -102,7 +102,7 @@ function readTime(val) {
   return VALID_TIMES.includes(t) ? t : DEFAULT_TIME;
 }
 
-/** 구독 신청. time 파라미터 없으면 기본 11:30 */
+/** 구독 신청. 이미 구독 중이면 시간이 다를 경우 자동 변경 */
 function subscribe(phone, time) {
   if (!validateTime(time)) time = DEFAULT_TIME;
 
@@ -111,6 +111,11 @@ function subscribe(phone, time) {
 
   for (let i = 1; i < data.length; i++) {
     if (readPhone(data[i][0]) === phone) {
+      var currentTime = readTime(data[i][2]);
+      if (currentTime !== time) {
+        sheet.getRange(i + 1, 3).setNumberFormat("@").setValue(time);
+        return { status: "time_updated", message: "알림 시간이 " + time + "으로 변경되었습니다!", time: time };
+      }
       return { status: "already_subscribed", message: "이미 구독 중이시네요!" };
     }
   }
