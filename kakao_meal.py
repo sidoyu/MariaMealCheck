@@ -77,7 +77,7 @@ def try_crawl_fallback():
     print("오늘 식단 데이터 없음 → 즉석 크롤링 재시도")
     try:
         result = subprocess.run(
-            [sys.executable, os.path.join(script_dir, "seleniumcrawling3.py")],
+            [sys.executable, os.path.join(script_dir, "seleniumcrawling_mgw.py")],
             cwd=script_dir,
             capture_output=True, text=True, timeout=180,
         )
