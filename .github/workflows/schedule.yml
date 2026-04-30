@@ -31,7 +31,7 @@ jobs:
           ALIGO_SENDER_KEY: ${{ secrets.ALIGO_SENDER_KEY }}
           ALIGO_SENDER: ${{ secrets.ALIGO_SENDER }}
           ALIGO_RECEIVERS: ${{ secrets.ALIGO_RECEIVERS }}
-        run: python seleniumcrawling3.py
+        run: python seleniumcrawling_mgw.py
 
       - name: Commit updated latest_meal.json
         run: |
